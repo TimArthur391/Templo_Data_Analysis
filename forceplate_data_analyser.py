@@ -3,14 +3,26 @@ import numpy as np
 import math
 
 class ForcePlateDataAnalyser:
-    def __init__(self, txt_file_path):
+    def __init__(self, txt_file_path, timestamp, camera_view, origin_coordinate, target_coordinate):
         self.txt_file_path = txt_file_path
-        self.timestamp = None
+        self.timestamp = timestamp
         self.force_data = None
-        self.camera_view = None
-        self.angle = 0
+        self.camera_view = camera_view
+        self.f_angle = 0
+        self.scaling_factor = 0 
         self.max_force = None
+        self.f_magnitude = None
+        self.origin_coordinate = origin_coordinate
+        self.target_coordinate = target_coordinate
+        self.force_vector_tip_coorindate = None
+        self.target_to_vector_tip_coordinate = None
+        self.max_force_vector_length = 400 #pixels
+        self.external_moment = None
+        self.f_to_target_perpendicular_distance = None
         
+        self.load_data()
+        self.get_maximum_force_magnitude()
+
     def load_data(self):
         # Load the data from the TXT file using pandas
         data = pd.read_csv(self.txt_file_path, delimiter='\t', header=(0), dtype='float32')
@@ -19,46 +31,90 @@ class ForcePlateDataAnalyser:
         force_data = data[['ts','fx', 'fy', 'fz']]
         
         self.force_data = force_data
-        self.get_maximum_force_magnitude()
-
-    def process_force_data_at_timestamp(self, timestamp, camera_view):
-        if self.force_data is not None:
-            closest_index = np.abs(self.force_data['ts'] - timestamp).idxmin()
-            if camera_view == 1: #Coronal
-                fx = self.force_data.loc[closest_index, 'fx']
-                fz = self.force_data.loc[closest_index, 'fz']
-                return self.calculate_angle_from_force(fx, fz), self.calculate_scaling_factor(fx, fz)
-                
-                #print(f"Coronal Force Data: Fy={fy}, Fz={fz}")
-            elif camera_view == 2: #Sagittal
-                fy = self.force_data.loc[closest_index, 'fy']
-                fz = self.force_data.loc[closest_index, 'fz']
-                return self.calculate_angle_from_force(fy, fz), self.calculate_scaling_factor(fy, fz)
-                #print(f"Sagittal Force Data: Fx={fx}, Fz={fz}")
-            else:
-                print("Invalid option selected.")
-        else:
-            print("Force data not loaded.")
 
     def get_maximum_force_magnitude(self):
         if self.force_data is not None:
             normalised_force = np.linalg.norm(self.force_data[['fx', 'fy', 'fz']].values, axis=1)
             self.max_force = np.max(normalised_force)
 
-    def calculate_angle_from_force(self, fhorz, fz):
-        # Calculate the angle from the force components
-        # Replace this with your actual angle calculation logic
-        angle = math.atan(fz / fhorz)  # Calculate the angle in radians
-        print(math.degrees(angle))  # Convert the angle to degrees
-        return angle
+    def get_force_vector_information(self):
+        self.calculate_force_magnitude_and_direction()
+        self.calculate_scaling_factor()
+        self.calculate_force_vector_tip_coordinate()
+
+        return self.f_magnitude, self.f_angle, self.force_vector_tip_coorindate
+
+    def calculate_force_magnitude_and_direction(self):
+        if self.force_data is not None:
+            closest_index = np.abs(self.force_data['ts'] - self.timestamp).idxmin()
+            if self.camera_view == 1: #Coronal
+                fx = self.force_data.loc[closest_index, 'fx']
+                fz = self.force_data.loc[closest_index, 'fz']
+                self.f_magnitude = ((fx**2) + (fz**2))**0.5
+                self.f_angle = math.atan(fz / fx) #self.calculate_angle_from_force(fx, fz)
+                #self.scaling_factor = self.calculate_scaling_factor(fx, fz)
+                
+                #print(f"Coronal Force Data: Fy={fy}, Fz={fz}")
+            elif self.camera_view == 2: #Sagittal
+                fy = self.force_data.loc[closest_index, 'fy']
+                fz = self.force_data.loc[closest_index, 'fz']
+                self.f_magnitude = ((fy**2) + (fz**2))**0.5
+                self.f_angle = math.atan(fz / fy) #self.calculate_angle_from_force(fy, fz)
+                #self.scaling_factor = self.calculate_scaling_factor(fy, fz)
+                #print(f"Sagittal Force Data: Fx={fx}, Fz={fz}")
+            else:
+                print("Invalid option selected.")
+        else:
+            print("Force data not loaded.")
+
+    def calculate_scaling_factor(self):
+        self.scaling_factor = self.f_magnitude/self.max_force
+
+    def calculate_force_vector_tip_coordinate(self):
+        x = self.max_force_vector_length * self.scaling_factor * math.cos(self.f_angle)
+        y = self.max_force_vector_length * self.scaling_factor * math.sin(self.f_angle)
+        if self.f_angle < 0:
+            x = x * -1
+        else:
+            y = y * -1
+        
+        x = x + self.origin_coordinate[0]
+        y = y + self.origin_coordinate[1]
+        self.force_vector_tip_coorindate = [x, y]
+
+    def get_external_moment_information(self):
+        self.distance_between_force_vector_and_target()
+        self.external_moment = self.f_magnitude * self.f_to_target_perpendicular_distance
+
+        self.get_target_to_vector_tip_coordinate()
+
+        return self.external_moment, self.target_to_vector_tip_coordinate
+
+    def distance_between_force_vector_and_target(self):
+        # angle is still the angle of the force vector - need to be careful because of the silly refernce frame templo has created
+        x = self.target_coordinate[0] - self.origin_coordinate[0]
+        y = self.target_coordinate[1] - self.origin_coordinate[1]
+
+        x = self.pixles_to_mm(x, 'x')
+        y = self.pixles_to_mm(y, 'y')
+
+        p = ((x**2) + (y**2))**0.5
+        theta = np.arctan(x/y)
+        beta = (np.pi/2) - self.f_angle - theta
+
+        self.f_to_target_perpendicular_distance = p * np.sin(beta)
+
+    def pixles_to_mm(self, distance, direction):
+        return distance
     
-    def calculate_scaling_factor(self, fhorz, fz):
-        return np.linalg.norm([fhorz, fz])/self.max_force
-    
-    def calcuate_x_and_y(self, angle, scaling_factor, max_pixel_length):
-        #need to correct for the negative angles
-        x = max_pixel_length * scaling_factor * math.cos(angle)
-        y = max_pixel_length * scaling_factor * math.sin(angle)
-        return x, y
+    def get_target_to_vector_tip_coordinate(self, x, y, k, angle):
+        
+        x = self.target_coordinate[0] - self.origin_coordinate[0]
+        y = self.target_coordinate[1] - self.origin_coordinate[1]
+        
+        x = self.origin_coordinate[0] + (x - ((self.f_to_target_perpendicular_distance * np.cos(self.f_angle)) / np.tan(self.f_angle)))
+        y = self.origin_coordinate[1] + (y - (self.f_to_target_perpendicular_distance * np.cos(self.f_angle)))
+        
+        self.target_to_vector_tip_coordinate = [x, y]
 
 

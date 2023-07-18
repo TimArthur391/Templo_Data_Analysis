@@ -21,6 +21,11 @@ class VideoPlayerGUI:
         self.data_analyser = None
         self.camera_view = tk.IntVar(value=0)
         self.timestamp = None
+        self.external_moment = None
+        self.origin_coordinate = None
+        self.target_coordinate = None
+        self.f_magnitude = None
+        self.f_angle = None
 
         # Create the necessary GUI elements
         self.create_widgets()
@@ -118,7 +123,6 @@ class VideoPlayerGUI:
 
             if txt_file_path:
                 self.txt_file_path = txt_file_path
-                self.data_analyser = fda.ForcePlateDataAnalyser(self.txt_file_path)
             # Initialize video capture object
             self.video_capture = cv2.VideoCapture(self.video_path)
 
@@ -182,10 +186,15 @@ class VideoPlayerGUI:
         for coord in self.coordinates_list:
             if coord[2] == self.target_oval_id:
                 self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Target)")
+                self.target_coordinate = [coord[0], coord[1]]
             elif coord[2] == self.origin_oval_id:
                 self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Origin)")
+                self.origin_coordinate = [coord[0], coord[1]]
             else:
                 self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]}")
+
+        if self.external_moment:
+            self.coordinates_listbox.insert(tk.END, f"External joint moment: {self.external_moment} Nm")
 
     def remove_coordinates(self):
         # Get the selected index from the listbox
@@ -271,11 +280,10 @@ class VideoPlayerGUI:
 
     def update_calculate_button_state(self):
         # Enable the Calculate button if an origin and target oval are selected and the video is paused
-        if self.origin_oval_id and self.target_oval_id and self.paused and self.camera_view.get() != 0:
+        if self.origin_oval_id and self.target_oval_id and self.paused and self.camera_view.get() != 0 and self.video_path and self.txt_file_path:
             self.calculate_button.config(state=tk.NORMAL)
         else:
            self.calculate_button.config(state=tk.DISABLED)
-
 
     def toggle_pause(self):
         self.paused = not self.paused
@@ -289,44 +297,27 @@ class VideoPlayerGUI:
         self.update_calculate_button_state()  # Update the Calculate button state
 
     def calculate(self):
-        self.data_analyser.load_data()
-        angle, scaling_factor = self.data_analyser.process_force_data_at_timestamp(self.timestamp, self.camera_view.get())
-        x_origin, y_origin, x_tip, y_tip = self.get_arrow_coordinates(angle, scaling_factor)
-        self.draw_arrow(x_origin, y_origin, x_tip, y_tip)
+        da = fda.ForcePlateDataAnalyser(self.txt_file_path, self.timestamp, self.camera_view.get(),
+                                        self.origin_coordinate, self.target_coordinate)
+        
+        self.f_magnitude, self.f_angle, force_vector_tip_coorindate = da.get_force_vector_information()
+        self.canvas.create_line(self.origin_coordinate[0], self.origin_coordinate[1],
+                                force_vector_tip_coorindate[0], force_vector_tip_coorindate[1], 
+                                smooth=True, width=3, fill='yellow')
+
         #work out the perpendicular distance from target to line
-        #calculate torque
-    
-    def get_arrow_coordinates(self, angle, scaling_factor):
-        # Check if an origin and target oval are selected
-        if self.origin_oval_id and self.target_oval_id:
-            #get origin coordinates
-            for coord in self.coordinates_list:
-                if coord[2] == self.origin_oval_id:
-                    x_origin = coord[0]
-                    y_origin = coord[1]
-
-            #work out what the tip coordinate should be
-            max_pixel_length = 400
-            x, y = self.data_analyser.calcuate_x_and_y(angle, scaling_factor, max_pixel_length)
-            if angle < 0:
-                x = x * -1
-            else:
-                y = y * -1
-            x_tip = x_origin + x
-            y_tip = y_origin + y
-
-        return x_origin, y_origin, x_tip, y_tip
-
-    def draw_arrow(self, x_origin, y_origin, x_tip, y_tip):
-        # Draw an arrow on the canvas
-        self.canvas.create_line(x_origin, y_origin, x_tip, y_tip, smooth=True, width=3, fill='yellow') 
+        #calculate external moment
+        self.external_moment, target_to_vector_tip_coordinate = da.get_external_moment_information() #x_distance, y_distance, angle)
+        self.update_coordinates_listbox(self)
+        self.canvas.create_line(self.target_coordinate[0], self.target_coordinate[1],
+                                target_to_vector_tip_coordinate[0], target_to_vector_tip_coordinate[1], 
+                                smooth=True, width=2, fill='white')
 
     def handle_enter(self, event):
         event.widget.configure(cursor='hand2')
 
     def handle_leave(self, event):
         event.widget.configure(cursor='')
-
 
     def run(self):
         self.root.mainloop()
