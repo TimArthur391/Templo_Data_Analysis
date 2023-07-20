@@ -42,7 +42,7 @@ class ForcePlateDataAnalyser:
         self.calculate_scaling_factor()
         self.calculate_force_vector_tip_coordinate()
 
-        return self.f_magnitude, self.f_angle, self.force_vector_tip_coorindate
+        return np.round(self.f_magnitude, decimals=2), np.round(np.rad2deg(self.f_angle), decimals=2), self.force_vector_tip_coorindate
 
     def calculate_force_magnitude_and_direction(self):
         if self.force_data is not None:
@@ -83,17 +83,17 @@ class ForcePlateDataAnalyser:
         self.force_vector_tip_coorindate = [x, y]
 
     def get_external_moment_information(self):
-        self.distance_between_force_vector_and_target()
+        self.get_distance_between_force_vector_and_target()
+        
         self.external_moment = self.f_magnitude * self.f_to_target_perpendicular_distance
-
         self.get_target_to_vector_tip_coordinate()
+        
+        return np.abs(np.round(self.external_moment, decimals=2)), self.target_to_vector_tip_coordinate, np.abs(np.round(self.f_to_target_perpendicular_distance, decimals=2))
 
-        return self.external_moment, self.target_to_vector_tip_coordinate
-
-    def distance_between_force_vector_and_target(self):
+    def get_distance_between_force_vector_and_target(self):
         # angle is still the angle of the force vector - need to be careful because of the silly refernce frame templo has created
         x = self.target_coordinate[0] - self.origin_coordinate[0]
-        y = self.target_coordinate[1] - self.origin_coordinate[1]
+        y = self.origin_coordinate[1] - self.target_coordinate[1]
 
         x = self.pixles_to_mm(x, 'x')
         y = self.pixles_to_mm(y, 'y')
@@ -107,13 +107,13 @@ class ForcePlateDataAnalyser:
     def pixles_to_mm(self, distance, direction):
         return distance
     
-    def get_target_to_vector_tip_coordinate(self, x, y, k, angle):
+    def get_target_to_vector_tip_coordinate(self):
         
         x = self.target_coordinate[0] - self.origin_coordinate[0]
-        y = self.target_coordinate[1] - self.origin_coordinate[1]
-        
-        x = self.origin_coordinate[0] + (x - ((self.f_to_target_perpendicular_distance * np.cos(self.f_angle)) / np.tan(self.f_angle)))
-        y = self.origin_coordinate[1] + (y - (self.f_to_target_perpendicular_distance * np.cos(self.f_angle)))
+        y = self.origin_coordinate[1] - self.target_coordinate[1]
+
+        x = self.origin_coordinate[0] + (x + (self.f_to_target_perpendicular_distance * np.sin(self.f_angle)))
+        y = self.origin_coordinate[1] - (y - (self.f_to_target_perpendicular_distance * np.cos(self.f_angle)))
         
         self.target_to_vector_tip_coordinate = [x, y]
 

@@ -26,6 +26,7 @@ class VideoPlayerGUI:
         self.target_coordinate = None
         self.f_magnitude = None
         self.f_angle = None
+        self.perp_distance = None
 
         # Create the necessary GUI elements
         self.create_widgets()
@@ -193,8 +194,17 @@ class VideoPlayerGUI:
             else:
                 self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]}")
 
+        if self.f_magnitude:
+            self.coordinates_listbox.insert(tk.END, f"Force vector magnitude: {self.f_magnitude} N")
+
+        if self.f_angle:
+            self.coordinates_listbox.insert(tk.END, f"Force vector angle: {self.f_angle} deg")
+
+        if self.perp_distance:
+            self.coordinates_listbox.insert(tk.END, f"Perpendicular distance: {self.perp_distance} pixels")
+
         if self.external_moment:
-            self.coordinates_listbox.insert(tk.END, f"External joint moment: {self.external_moment} Nm")
+            self.coordinates_listbox.insert(tk.END, f"External joint moment: {self.external_moment} Npixles")
 
     def remove_coordinates(self):
         # Get the selected index from the listbox
@@ -220,6 +230,10 @@ class VideoPlayerGUI:
         self.coordinates_list = []
         self.origin_oval_id = None
         self.target_oval_id = None
+        self.external_moment = None
+        self.f_magnitude = None
+        self.f_angle = None
+        self.perp_distance = None
         # Update the coordinates listbox
         self.update_coordinates_listbox()
 
@@ -307,8 +321,8 @@ class VideoPlayerGUI:
 
         #work out the perpendicular distance from target to line
         #calculate external moment
-        self.external_moment, target_to_vector_tip_coordinate = da.get_external_moment_information() #x_distance, y_distance, angle)
-        self.update_coordinates_listbox(self)
+        self.external_moment, target_to_vector_tip_coordinate, self.perp_distance = da.get_external_moment_information() #x_distance, y_distance, angle)
+        self.update_coordinates_listbox()
         self.canvas.create_line(self.target_coordinate[0], self.target_coordinate[1],
                                 target_to_vector_tip_coordinate[0], target_to_vector_tip_coordinate[1], 
                                 smooth=True, width=2, fill='white')
