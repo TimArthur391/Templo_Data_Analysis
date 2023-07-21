@@ -1,13 +1,14 @@
 import tkinter as tk
 import tkinter.filedialog
+from tkinter import Toplevel
 from tkinter.ttk import Style, Button, Label, Checkbutton
 import cv2
 from PIL import Image, ImageTk
 import forceplate_data_analyser as fda
-import ctypes
 
 class VideoPlayerGUI:
     def __init__(self, root):
+
         self.root = tk.Frame(root)
         self.video_path = None
         self.txt_file_path = None
@@ -53,6 +54,7 @@ class VideoPlayerGUI:
 
         self.root.grid(row=0, column=0, padx=10, pady=10)
         self.root.configure(background='#2d2d2d')
+        
 
         # Create the Open Video button
         self.open_button = Button(self.root, text="Open Video", command=self.open_video, style='TButton')
@@ -62,14 +64,26 @@ class VideoPlayerGUI:
         self.pause_button = Button(self.root, text="Pause", command=self.toggle_pause, style='TButton')
         self.pause_button.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=5, pady=2)
 
-        self.frame_label = Label(self.root, text="Frame: ", style='TLabel')
-        self.frame_label.grid(row=4, column=0, columnspan=1, padx=5, pady=2)
-        self.timestamp_label = Label(self.root, text="Timestamp: ", style='TLabel')
-        self.timestamp_label.grid(row=4, column=1, columnspan=1, padx=5, pady=2)
+        #Create Frame, Timestamp, Forward and Backwards Buttons
+        nested_frame = tk.Frame(self.root, bg='#2d2d2d')
+        nested_frame.grid(row=4, column=0, columnspan=2, sticky='nsew', padx=0, pady=0)
 
+        self.frame_label = Label(nested_frame, text="Frame: ", style='TLabel')
+        self.frame_label.grid(row=0, column=2, columnspan=1, padx=5, pady=2)
+
+        self.timestamp_label = Label(nested_frame, text="Timestamp: ", style='TLabel')
+        self.timestamp_label.grid(row=0, column=3, columnspan=1, sticky='nsew', padx=15, pady=2)
+
+        self.forward_button = Button(nested_frame, text="Forward", command=self.move_forward, style='TButton')
+        self.forward_button.grid(row=0, column=1, columnspan=1, sticky='nsew', padx=15, pady=2)
+        self.forward_button.config(state=tk.DISABLED)
+
+        self.backward_button = Button(nested_frame, text="Backward", command=self.move_backward, style='TButton')
+        self.backward_button.grid(row=0, column=0, columnspan=1, sticky='nsew', padx=5, pady=2)
+        self.backward_button.config(state=tk.DISABLED)
 
         # Create the canvas for displaying the video frames
-        self.canvas = tk.Canvas(self.root, width=1280, height=720, bg='black')
+        self.canvas = tk.Canvas(self.root,  width=1280, height=720, bg='black')
         self.canvas.grid(row=2, column=0, columnspan=2, sticky='nsew', padx=5, pady=2)
 
         # Create the listbox for displaying the coordinates
@@ -88,6 +102,7 @@ class VideoPlayerGUI:
         self.target_button = Button(self.root, text="Target", command=self.set_target, style='TButton')
         self.target_button.grid(row=3, column=3, columnspan=1, sticky='nsew', padx=5, pady=2)
 
+
         self.coronal_check = Checkbutton(self.root, text='Coronal', variable=self.camera_view, onvalue=1,
                                     command=lambda: self.set_camera_view(1), style='TCheckbutton')#, foreground='white', background='#2d2d2d')
         self.coronal_check.grid(row=1, column=0, columnspan=1, padx=5, pady=2)
@@ -95,6 +110,10 @@ class VideoPlayerGUI:
         self.sagittal_check = Checkbutton(self.root, text='Sagittal', variable=self.camera_view, onvalue=2,
                                     command=lambda: self.set_camera_view(2), style='TCheckbutton')#, foreground='white', background='#2d2d2d')
         self.sagittal_check.grid(row=1, column=1, columnspan=1, padx=5, pady=2)
+
+        # Create a button to open the calibrate window
+        self.calibrate_button = tk.Button(self.root, text="Calibration", command=self.open_calibration_window, bg='#2d2d2d', foreground='grey', relief=tk.FLAT)
+        self.calibrate_button.grid(row=1, column=3, columnspan=1, sticky='nsew', padx=5, pady=2)
 
         self.calculate_button = Button(self.root, text="Calculate", command=self.calculate, style='TButton')
         self.calculate_button.grid(row=5, column=0, columnspan=4, sticky='nsew', padx=5, pady=5)
@@ -106,12 +125,16 @@ class VideoPlayerGUI:
 
         # Bind the events for changing the mouse cursor
         list_of_buttons = [self.open_button, self.pause_button, self.remove_button, self.origin_button, 
-                           self.target_button, self.calculate_button, self.coronal_check, self.sagittal_check]
+                           self.target_button, self.calculate_button, self.coronal_check, self.sagittal_check,
+                           self.calibrate_button, self.forward_button, self.backward_button]
         for button in list_of_buttons:
             button.bind('<Enter>', self.handle_enter)
             button.bind('<Leave>', self.handle_leave)
 
     def open_video(self):
+        self.canvas.delete('all')  # Clear the canvas
+        self.reset_coordinates()
+
         # Open a file dialog to select the MP4 video file
         video_file_path  = tk.filedialog.askopenfilename(filetypes=[("AVI files", "*.avi"),("MP4 files", "*.mp4")])
 
@@ -168,6 +191,26 @@ class VideoPlayerGUI:
         if not self.paused:
             self.root.after(20, self.play_video)
 
+    def move_forward(self):
+        if self.video_capture is not None:
+            self.reset_coordinates()
+            # Move the video forward by one frame
+            self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, self.video_capture.get(cv2.CAP_PROP_POS_FRAMES))
+            # Play the video from the new frame
+            self.play_video()
+
+    def move_backward(self):
+        if self.video_capture is not None:
+            self.reset_coordinates()
+            # Get the current frame number
+            current_frame = self.video_capture.get(cv2.CAP_PROP_POS_FRAMES)
+            # Move the video backward by one frame (if possible)
+            new_frame = max(0, current_frame - 2)  # Subtract 2 to go back by one frame and account for the next frame in play_video
+            self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, new_frame)
+            # Play the video from the new frame
+            self.play_video()
+
+
     def handle_click(self, event):
         if self.image_widget:
             # Draw a red dot at the clicked coordinates
@@ -178,6 +221,9 @@ class VideoPlayerGUI:
 
             # Update the coordinates listbox
             self.update_coordinates_listbox()
+
+        if not self.paused:
+            self.toggle_pause()
 
     def update_coordinates_listbox(self):
         # Clear the listbox
@@ -198,7 +244,7 @@ class VideoPlayerGUI:
             self.coordinates_listbox.insert(tk.END, f"Force vector magnitude: {self.f_magnitude} N")
 
         if self.f_angle:
-            self.coordinates_listbox.insert(tk.END, f"Force vector angle: {self.f_angle} deg")
+            self.coordinates_listbox.insert(tk.END, f"Force vector angle to horz: {self.f_angle} deg")
 
         if self.perp_distance:
             self.coordinates_listbox.insert(tk.END, f"Perpendicular distance: {self.perp_distance} pixels")
@@ -299,13 +345,23 @@ class VideoPlayerGUI:
         else:
            self.calculate_button.config(state=tk.DISABLED)
 
+    def update_frame_forwards_backwards_button_states(self):
+        if self.paused == True:
+            self.forward_button.config(state=tk.NORMAL)
+            self.backward_button.config(state=tk.NORMAL)
+        else:
+            self.forward_button.config(state=tk.DISABLED)
+            self.backward_button.config(state=tk.DISABLED)
+
     def toggle_pause(self):
         self.paused = not self.paused
         # Update the Pause button text
         if self.paused:
             self.pause_button.config(text="Play")
+            self.update_frame_forwards_backwards_button_states()
         else:
             self.pause_button.config(text="Pause")
+            self.update_frame_forwards_backwards_button_states()
             self.play_video()
 
         self.update_calculate_button_state()  # Update the Calculate button state
@@ -335,6 +391,18 @@ class VideoPlayerGUI:
 
     def run(self):
         self.root.mainloop()
+
+
+################################## Calibration Window #########################################
+
+    def open_calibration_window(self):
+        # Create a new Toplevel window (secondary window)
+        calibration_window = Toplevel(self.root)
+        calibration_window.title("Calibration Window")
+
+        # Add widgets to the secondary window
+        label = tk.Label(calibration_window, text="This is the secondary window.")
+        label.pack()
 
 # Create the main Tkinter window
 root = tk.Tk()

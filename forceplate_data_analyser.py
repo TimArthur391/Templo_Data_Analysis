@@ -29,7 +29,12 @@ class ForcePlateDataAnalyser:
         data['ts'] = np.arange(0,data.shape[0])/1000
         # Extract the force and moment data
         force_data = data[['ts','fx', 'fy', 'fz']]
-        
+
+        # Downsample force data so that it aligns better with the video data
+        # Tried this and it didn't work that well
+        downsampling_ratio = 1000 // 50  # 1000Hz to 50Hz
+        downsampled_force_data = force_data.groupby(force_data.index // downsampling_ratio).last()
+
         self.force_data = force_data
 
     def get_maximum_force_magnitude(self):
@@ -42,7 +47,11 @@ class ForcePlateDataAnalyser:
         self.calculate_scaling_factor()
         self.calculate_force_vector_tip_coordinate()
 
-        return np.round(self.f_magnitude, decimals=2), np.round(np.rad2deg(self.f_angle), decimals=2), self.force_vector_tip_coorindate
+        return_angle = np.round(np.rad2deg(self.f_angle), decimals=2)
+        if return_angle < 0:
+            return_angle += 180
+
+        return np.round(self.f_magnitude, decimals=2), return_angle, self.force_vector_tip_coorindate
 
     def calculate_force_magnitude_and_direction(self):
         if self.force_data is not None:
@@ -51,7 +60,7 @@ class ForcePlateDataAnalyser:
                 fx = self.force_data.loc[closest_index, 'fx']
                 fz = self.force_data.loc[closest_index, 'fz']
                 self.f_magnitude = ((fx**2) + (fz**2))**0.5
-                self.f_angle = math.atan(fz / fx) #self.calculate_angle_from_force(fx, fz)
+                self.f_angle = -1 * math.atan(fz / fx) #self.calculate_angle_from_force(fx, fz)
                 #self.scaling_factor = self.calculate_scaling_factor(fx, fz)
                 
                 #print(f"Coronal Force Data: Fy={fy}, Fz={fz}")
