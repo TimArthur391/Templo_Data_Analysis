@@ -1,0 +1,56 @@
+{
+    "sagittal": {
+        "top left": [
+            222,
+            324
+        ],
+        "top right": [
+            375,
+            323
+        ],
+        "bottom left": [
+            219,
+            342
+        ],
+        "bottom right": [
+            388,
+            342
+        ],
+        "ratio": 1
+    },
+    "coronal": {
+        "top left": [
+            293,
+            249
+        ],
+        "top right": [
+            342,
+            250
+        ],
+        "bottom left": [
+            290,
+            263
+        ],
+        "bottom right": [
+            347,
+            263
+        ],
+        "ratio": 1
+    },
+    "top left": [
+        224,
+        324
+    ],
+    "top right": [
+        375,
+        323
+    ],
+    "bottom left": [
+        219,
+        343
+    ],
+    "bottom right": [
+        388,
+        342
+    ]
+}

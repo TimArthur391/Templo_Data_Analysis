@@ -5,6 +5,7 @@ from tkinter.ttk import Style, Button, Label, Checkbutton
 import cv2
 from PIL import Image, ImageTk
 import forceplate_data_analyser as fda
+import json
 
 class VideoPlayerGUI:
     def __init__(self, root):
@@ -21,6 +22,7 @@ class VideoPlayerGUI:
         self.target_oval_id = None
         self.data_analyser = None
         self.camera_view = tk.IntVar(value=0)
+        self.camera_view_text = None
         self.timestamp = None
         self.external_moment = None
         self.origin_coordinate = None
@@ -28,6 +30,34 @@ class VideoPlayerGUI:
         self.f_magnitude = None
         self.f_angle = None
         self.perp_distance = None
+        self.zoom_factor = 1.0
+        self.image_width = int(640)
+        self.image_height = int(360)
+        self.image = None
+        self.calibration_window = None
+        self.pixel_mm_ratio = None
+        self.top_left_oval_id = None
+        self.top_right_oval_id = None
+        self.bottom_left_oval_id = None
+        self.bottom_right_oval_id = None
+        self.calibration_parameters = {
+            "sagittal" : {
+                "top left" : (0,0),
+                "top right" : (0,0),
+                "bottom left" : (0,0),
+                "bottom right" : (0,0),
+                "ratio" : 1
+            },
+            "coronal" : {
+                "top left" : (0,0),
+                "top right" : (0,0),
+                "bottom left" : (0,0),
+                "bottom right" : (0,0),
+                "ratio" : 1
+            }
+            
+        }
+        self.polygon = None
 
         # Create the necessary GUI elements
         self.create_widgets()
@@ -82,9 +112,29 @@ class VideoPlayerGUI:
         self.backward_button.grid(row=0, column=0, columnspan=1, sticky='nsew', padx=5, pady=2)
         self.backward_button.config(state=tk.DISABLED)
 
+        self.zoom_in_button = Button(nested_frame, text="Zoom In", command=self.zoom_in, style='TButton')
+        self.zoom_in_button.grid(row=0, column=4, columnspan=1, sticky='nsew', padx=15, pady=2)
+        self.zoom_in_button.config(state=tk.DISABLED)
+        
+        self.zoom_out_button = Button(nested_frame, text="Zoom Out", command=self.zoom_out, style='TButton')
+        self.zoom_out_button.grid(row=0, column=5, columnspan=1, sticky='nsew', padx=5, pady=2)
+        self.zoom_out_button.config(state=tk.DISABLED)
+
         # Create the canvas for displaying the video frames
-        self.canvas = tk.Canvas(self.root,  width=1280, height=720, bg='black')
-        self.canvas.grid(row=2, column=0, columnspan=2, sticky='nsew', padx=5, pady=2)
+        nested_frame_2 = tk.Frame(self.root, bg='#2d2d2d')
+        nested_frame_2.grid(row=2, column=0, columnspan=2, sticky='nsew', padx=0, pady=0)
+        v_scrollbar = tk.Scrollbar(nested_frame_2, orient=tk.VERTICAL)
+        h_scrollbar = tk.Scrollbar(nested_frame_2, orient=tk.HORIZONTAL)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.canvas = tk.Canvas(nested_frame_2,  width=self.image_width, height=self.image_height, bg='black', yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        v_scrollbar.config(command=self.canvas.yview)
+        h_scrollbar.config(command=self.canvas.xview)
+
+
 
         # Create the listbox for displaying the coordinates
         self.coordinates_listbox = tk.Listbox(self.root, width=35, background='#444444', foreground='white')
@@ -112,7 +162,7 @@ class VideoPlayerGUI:
         self.sagittal_check.grid(row=1, column=1, columnspan=1, padx=5, pady=2)
 
         # Create a button to open the calibrate window
-        self.calibrate_button = tk.Button(self.root, text="Calibration", command=self.open_calibration_window, bg='#2d2d2d', foreground='grey', relief=tk.FLAT)
+        self.calibrate_button = tk.Button(self.root, text="Calibrate", command=self.open_calibration_window, bg='#2d2d2d', foreground='grey', relief=tk.FLAT)
         self.calibrate_button.grid(row=1, column=3, columnspan=1, sticky='nsew', padx=5, pady=2)
 
         self.calculate_button = Button(self.root, text="Calculate", command=self.calculate, style='TButton')
@@ -126,7 +176,7 @@ class VideoPlayerGUI:
         # Bind the events for changing the mouse cursor
         list_of_buttons = [self.open_button, self.pause_button, self.remove_button, self.origin_button, 
                            self.target_button, self.calculate_button, self.coronal_check, self.sagittal_check,
-                           self.calibrate_button, self.forward_button, self.backward_button]
+                           self.calibrate_button, self.forward_button, self.backward_button, self.zoom_in_button, self.zoom_out_button]
         for button in list_of_buttons:
             button.bind('<Enter>', self.handle_enter)
             button.bind('<Leave>', self.handle_leave)
@@ -162,10 +212,10 @@ class VideoPlayerGUI:
                 image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
                 # Resize the image to fit the canvas
-                image = image.resize((1280, 720))
+                self.image = image.resize((self.image_width, self.image_height), Image.Resampling.LANCZOS)
 
                 # Create an ImageTk object from the PIL Image
-                self.image_widget = ImageTk.PhotoImage(image)
+                self.image_widget = ImageTk.PhotoImage(self.image)
 
                 # Update the canvas image
                 self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image_widget)
@@ -186,7 +236,10 @@ class VideoPlayerGUI:
                     self.timestamp = timestamp
                 else:
                     # Reset the coordinates list when the video is played
-                    self.reset_coordinates()
+                    if self.coordinates_list != []:
+                        self.reset_coordinates()
+                    if self.zoom_factor != 1.0:
+                        self.zoom_factor = 1.0
 
         if not self.paused:
             self.root.after(20, self.play_video)
@@ -210,14 +263,81 @@ class VideoPlayerGUI:
             # Play the video from the new frame
             self.play_video()
 
+    def zoom_in(self):
+        self.zoom_factor *= 1.2
+        self.apply_zoom()
+        
+    def zoom_out(self):
+        if self.zoom_factor >= 1.0:
+            self.zoom_factor /= 1.2
+            self.apply_zoom()
+        
+    def apply_zoom(self):
+        if self.image_widget:
+            width = int(self.image_width * self.zoom_factor)
+            height = int(self.image_height * self.zoom_factor)
+            resized_image = self.image.resize((width, height), Image.Resampling.LANCZOS)
+            self.image_widget = ImageTk.PhotoImage(resized_image)
+            self.canvas.delete("all")
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image_widget)
+
+            # Update canvas scroll region to enable scrolling
+            self.canvas.config(scrollregion=self.canvas.bbox("all"))
+            self.redraw_ovals()
+            self.redraw_force_plate_overlay()
+
+    def redraw_ovals(self):
+        ovals_list = []
+        for coord in self.coordinates_list:
+            oval_id = None
+            x = coord[0] * self.zoom_factor
+            y = coord[1] * self.zoom_factor
+            if coord[2] == self.target_oval_id:
+                oval_id = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="green")
+                self.target_oval_id = oval_id
+
+            elif coord[2] == self.origin_oval_id:
+                oval_id = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="blue")
+                self.origin_oval_id = oval_id
+
+            elif coord[2] == self.top_left_oval_id:
+                oval_id = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="green")
+                self.top_left_oval_id = oval_id
+
+            elif coord[2] == self.top_right_oval_id:
+                oval_id = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="green")
+                self.top_right_oval_id = oval_id
+
+            elif coord[2] == self.bottom_left_oval_id:
+                oval_id = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="green")
+                self.bottom_left_oval_id = oval_id
+
+            elif coord[2] == self.bottom_right_oval_id:    
+                oval_id = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="green")
+                self.bottom_right_oval_id = oval_id
+
+            else:
+                oval_id = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="red")
+
+        
+        #update coordinates list to reflect new oval ids
+            x = round(x / self.zoom_factor)
+            y = round(y / self.zoom_factor)
+            ovals_list.append((x, y, oval_id))
+        
+        self.coordinates_list = ovals_list
 
     def handle_click(self, event):
         if self.image_widget:
             # Draw a red dot at the clicked coordinates
-            oval_id = self.canvas.create_oval(event.x - 5, event.y - 5, event.x + 5, event.y + 5, fill="red")
+            x = self.canvas.canvasx(event.x)
+            y = self.canvas.canvasy(event.y)
+            oval_id = self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="red")
 
             # Add the coordinates and oval ID to the list
-            self.coordinates_list.append((event.x, event.y, oval_id))
+            x = round(x / self.zoom_factor)
+            y = round(y / self.zoom_factor)
+            self.coordinates_list.append((x, y, oval_id))
 
             # Update the coordinates listbox
             self.update_coordinates_listbox()
@@ -228,7 +348,6 @@ class VideoPlayerGUI:
     def update_coordinates_listbox(self):
         # Clear the listbox
         self.coordinates_listbox.delete(0, tk.END)
-
         # Add the coordinates to the listbox
         for coord in self.coordinates_list:
             if coord[2] == self.target_oval_id:
@@ -237,6 +356,18 @@ class VideoPlayerGUI:
             elif coord[2] == self.origin_oval_id:
                 self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Origin)")
                 self.origin_coordinate = [coord[0], coord[1]]
+            elif coord[2] == self.top_left_oval_id:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Top left)")
+                self.calibration_parameters[self.camera_view_text]['top left']=((coord[0], coord[1]))
+            elif coord[2] == self.top_right_oval_id:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Top right)")
+                self.calibration_parameters[self.camera_view_text]['top right']=((coord[0], coord[1]))
+            elif coord[2] == self.bottom_left_oval_id:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Bottom left)")
+                self.calibration_parameters[self.camera_view_text]['bottom left']=((coord[0], coord[1]))
+            elif coord[2] == self.bottom_right_oval_id:    
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Bottom right)")
+                self.calibration_parameters[self.camera_view_text]['bottom right']=((coord[0], coord[1]))
             else:
                 self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]}")
 
@@ -251,6 +382,9 @@ class VideoPlayerGUI:
 
         if self.external_moment:
             self.coordinates_listbox.insert(tk.END, f"External joint moment: {self.external_moment} Npixles")
+
+        if self.pixel_mm_ratio:
+            self.coordinates_listbox.insert(tk.END, f"Each pixel is {self.pixel_mm_ratio} mm")
 
     def remove_coordinates(self):
         # Get the selected index from the listbox
@@ -280,6 +414,7 @@ class VideoPlayerGUI:
         self.f_magnitude = None
         self.f_angle = None
         self.perp_distance = None
+        self.pixel_mm_ratio = None
         # Update the coordinates listbox
         self.update_coordinates_listbox()
 
@@ -334,6 +469,11 @@ class VideoPlayerGUI:
 
     def set_camera_view(self, option):
         self.camera_view.set(option)
+        if option == 1:
+            self.camera_view_text = "coronal"
+        elif option == 2:
+            self.camera_view_text = "sagittal"
+        
         #print(self.camera_view.get())
 
         self.update_calculate_button_state()
@@ -345,23 +485,27 @@ class VideoPlayerGUI:
         else:
            self.calculate_button.config(state=tk.DISABLED)
 
-    def update_frame_forwards_backwards_button_states(self):
+    def update_frame_manipulation_button_states(self):
         if self.paused == True:
             self.forward_button.config(state=tk.NORMAL)
             self.backward_button.config(state=tk.NORMAL)
+            self.zoom_in_button.config(state=tk.NORMAL)
+            self.zoom_out_button.config(state=tk.NORMAL)
         else:
             self.forward_button.config(state=tk.DISABLED)
             self.backward_button.config(state=tk.DISABLED)
+            self.zoom_in_button.config(state=tk.DISABLED)
+            self.zoom_out_button.config(state=tk.DISABLED)
 
     def toggle_pause(self):
         self.paused = not self.paused
         # Update the Pause button text
         if self.paused:
             self.pause_button.config(text="Play")
-            self.update_frame_forwards_backwards_button_states()
+            self.update_frame_manipulation_button_states()
         else:
             self.pause_button.config(text="Pause")
-            self.update_frame_forwards_backwards_button_states()
+            self.update_frame_manipulation_button_states()
             self.play_video()
 
         self.update_calculate_button_state()  # Update the Calculate button state
@@ -370,6 +514,9 @@ class VideoPlayerGUI:
         da = fda.ForcePlateDataAnalyser(self.txt_file_path, self.timestamp, self.camera_view.get(),
                                         self.origin_coordinate, self.target_coordinate)
         
+        self.zoom_factor = 1.0
+        self.apply_zoom()
+
         self.f_magnitude, self.f_angle, force_vector_tip_coorindate = da.get_force_vector_information()
         self.canvas.create_line(self.origin_coordinate[0], self.origin_coordinate[1],
                                 force_vector_tip_coorindate[0], force_vector_tip_coorindate[1], 
@@ -397,12 +544,192 @@ class VideoPlayerGUI:
 
     def open_calibration_window(self):
         # Create a new Toplevel window (secondary window)
-        calibration_window = Toplevel(self.root)
-        calibration_window.title("Calibration Window")
+        self.calibration_window = Toplevel(self.root)
+        self.calibration_window.title("Calibrate")
 
-        # Add widgets to the secondary window
-        label = tk.Label(calibration_window, text="This is the secondary window.")
-        label.pack()
+        if self.camera_view.get() == 0 or self.video_path == None or self.paused == False:
+            self.error_label = Label(self.calibration_window, text="Ensure a video and a camera direction have been selected, and video has been paused")
+            self.error_label.pack(padx=10, pady=10)
+        else:
+            # Create widgets for this window
+            self.create_calibration_widgets()
+
+            # Get previous calibartion data, including coordinates used for forceplate corners and pixel to mm ratio
+            self.extract_calibration_data_from_JSON()
+                
+            # Draw a box over the force plate using calibration coordinates
+            self.draw_force_plate_overlay()
+
+            # Display the pixel to mm ratio in the coordinates box
+            self.pixel_mm_ratio = self.calibration_parameters[self.camera_view_text]["ratio"]
+            self.update_coordinates_listbox()
+
+    def create_calibration_widgets(self):
+        # Create a custom style for the interface
+        style = Style()
+        style.theme_use('clam')  # Use the 'clam' theme as a base
+
+        # Configure the colors for the dark theme
+        style.configure('.', foreground='white', background='#2d2d2d')  # Set text and background color for all elements
+        style.configure('TButton', foreground='white', background='#444444', bordercolor='#666666',
+                        lightcolor='#444444', darkcolor='#444444')  # Customize Button widget
+        style.configure('TLabel', foreground='white', background='#2d2d2d')  # Customize Label widget
+        style.configure('TCheckbutton', foreground='white', background='#2d2d2d', indicatorcolor='white',
+                        selectcolor='#2d2d2d', troughcolor='#2d2d2d')  # Customize Checkbutton widget
+
+        # Override hover behavior for Checkbutton
+        style.map('TCheckbutton',
+                  background=[('active', '#2d2d2d'), ('selected', '#2d2d2d')],
+                  foreground=[('active', 'white'), ('selected', 'white')])
+        
+        self.calibration_window.configure(background='#2d2d2d')
+
+        self.Top_left_button = Button(self.calibration_window, text="Top left", command=self.set_top_left, style='TButton')
+        self.Top_left_button.grid(row=0, column=0, columnspan=1, sticky='nsew', padx=5, pady=2)
+
+        self.Top_right_button = Button(self.calibration_window, text="Top right", command=self.set_top_right, style='TButton')
+        self.Top_right_button.grid(row=0, column=1, columnspan=1, sticky='nsew', padx=5, pady=2)
+
+        self.Bottom_left_button = Button(self.calibration_window, text="Bottom left", command=self.set_bottom_left, style='TButton')
+        self.Bottom_left_button.grid(row=1, column=0, columnspan=1, sticky='nsew', padx=5, pady=2)
+
+        self.Bottom_right_button = Button(self.calibration_window, text="Bottom right", command=self.set_bottom_right, style='TButton')
+        self.Bottom_right_button.grid(row=1, column=1, columnspan=1, sticky='nsew', padx=5, pady=2)
+
+        self.perform_calibrate_button = Button(self.calibration_window, text="Calibrate", command=self.perform_calibration, style='TButton')
+        self.perform_calibrate_button.grid(row=2, column=0, columnspan=2, sticky='nsew', padx=5, pady=2)
+
+    def set_top_left(self):
+        selected_index = self.coordinates_listbox.curselection()
+
+        if selected_index:
+            # Retrieve the corresponding oval ID
+            selected_index = selected_index[0]
+            oval_id = self.coordinates_list[selected_index][2]
+
+            # Remove the highlight from the previous origin
+            if self.top_left_oval_id:
+                self.canvas.itemconfig(self.top_left_oval_id, fill="red")
+
+            # Update the origin oval ID and change its color to blue
+            if self.top_left_oval_id != oval_id:
+                # Change the color of the newly selected origin oval to blue
+                self.canvas.itemconfig(oval_id, fill="green")
+                self.top_left_oval_id = oval_id
+                self.update_calculate_button_state()  # Update the Calculate button state
+
+            else:
+                # If the same origin is selected, reset the origin ID
+                self.top_left_oval_id = None
+            self.update_coordinates_listbox()
+
+    def set_top_right(self):
+        selected_index = self.coordinates_listbox.curselection()
+
+        if selected_index:
+            # Retrieve the corresponding oval ID
+            selected_index = selected_index[0]
+            oval_id = self.coordinates_list[selected_index][2]
+
+            # Remove the highlight from the previous origin
+            if self.top_right_oval_id:
+                self.canvas.itemconfig(self.top_right_oval_id, fill="red")
+
+            # Update the origin oval ID and change its color to blue
+            if self.top_right_oval_id != oval_id:
+                # Change the color of the newly selected origin oval to blue
+                self.canvas.itemconfig(oval_id, fill="green")
+                self.top_right_oval_id = oval_id
+                self.update_calculate_button_state()  # Update the Calculate button state
+
+            else:
+                # If the same origin is selected, reset the origin ID
+                self.top_right_oval_id = None
+            self.update_coordinates_listbox()
+
+    def set_bottom_left(self):
+        selected_index = self.coordinates_listbox.curselection()
+
+        if selected_index:
+            # Retrieve the corresponding oval ID
+            selected_index = selected_index[0]
+            oval_id = self.coordinates_list[selected_index][2]
+
+            # Remove the highlight from the previous origin
+            if self.bottom_left_oval_id:
+                self.canvas.itemconfig(self.bottom_left_oval_id, fill="red")
+
+            # Update the origin oval ID and change its color to blue
+            if self.bottom_left_oval_id != oval_id:
+                # Change the color of the newly selected origin oval to blue
+                self.canvas.itemconfig(oval_id, fill="green")
+                self.bottom_left_oval_id = oval_id
+                self.update_calculate_button_state()  # Update the Calculate button state
+
+            else:
+                # If the same origin is selected, reset the origin ID
+                self.bottom_left_oval_id = None
+            self.update_coordinates_listbox()
+
+    def set_bottom_right(self):
+        selected_index = self.coordinates_listbox.curselection()
+
+        if selected_index:
+            # Retrieve the corresponding oval ID
+            selected_index = selected_index[0]
+            oval_id = self.coordinates_list[selected_index][2]
+
+            # Remove the highlight from the previous origin
+            if self.bottom_right_oval_id:
+                self.canvas.itemconfig(self.bottom_right_oval_id, fill="red")
+
+            # Update the origin oval ID and change its color to blue
+            if self.bottom_right_oval_id != oval_id:
+                # Change the color of the newly selected origin oval to blue
+                self.canvas.itemconfig(oval_id, fill="green")
+                self.bottom_right_oval_id = oval_id
+                self.update_calculate_button_state()  # Update the Calculate button state
+
+            else:
+                # If the same origin is selected, reset the origin ID
+                self.bottom_right_oval_id = None
+            self.update_coordinates_listbox()
+
+    def perform_calibration(self):
+        # the force plates are x mm in sagittal plane and y mm in coronal plane
+        # 
+
+        with open("calibration.json", "w") as outfile:
+            outfile.write(json.dumps(self.calibration_parameters, indent=4))
+        self.redraw_force_plate_overlay()
+
+    def draw_force_plate_overlay(self):
+        self.polygon = self.canvas.create_polygon(
+            self.calibration_parameters[self.camera_view_text]["top left"], self.calibration_parameters[self.camera_view_text]["top right"],
+            self.calibration_parameters[self.camera_view_text]["bottom right"], self.calibration_parameters[self.camera_view_text]["bottom left"], 
+            fill="", outline="red"
+        )
+
+    def redraw_force_plate_overlay(self):
+        if self.polygon:
+            #self.canvas.delete(self.polygon)
+            self.polygon = None
+
+            xy0 = [self.calibration_parameters[self.camera_view_text]["top left"][0] * self.zoom_factor, self.calibration_parameters[self.camera_view_text]["top left"][1] * self.zoom_factor]
+            xy1 = [self.calibration_parameters[self.camera_view_text]["top right"][0] * self.zoom_factor, self.calibration_parameters[self.camera_view_text]["top right"][1] * self.zoom_factor]
+            xy2 = [self.calibration_parameters[self.camera_view_text]["bottom right"][0] * self.zoom_factor, self.calibration_parameters[self.camera_view_text]["bottom right"][1] * self.zoom_factor]
+            xy3 = [self.calibration_parameters[self.camera_view_text]["bottom left"][0] * self.zoom_factor, self.calibration_parameters[self.camera_view_text]["bottom left"][1] * self.zoom_factor]
+
+            self.polygon = self.canvas.create_polygon(
+                xy0, xy1,
+                xy2, xy3, 
+                fill="", outline="red"
+            )
+
+    def extract_calibration_data_from_JSON(self):
+        with open('calibration.json', 'r') as openfile:
+            self.calibration_parameters = json.load(openfile)
+
 
 # Create the main Tkinter window
 root = tk.Tk()

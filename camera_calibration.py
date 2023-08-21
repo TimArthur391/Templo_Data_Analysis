@@ -1,43 +1,115 @@
 import cv2
-import 
+import numpy as np
+import os
+import glob
 
-class CameraCalibration:
-    def __init__(self, image_path):
-        # Create the main Tkinter window
-        root = tk.Tk()
+# This code is taken directly from the cv2 documentation: https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
 
-        # Set the window title
-        root.title("Video Player GUI")
-        root.configure(bg='#2d2d2d')
+def get_camera_matrix_and_distortion_coefficients(images):
+    # Define the dimensions of checkerboard
+    CHECKERBOARD = (6, 6)
 
-        # Create an instance of the VideoPlayerGUI class
-        gui = VideoPlayerGUI(root)
+    # stop the iteration when specified
+    # accuracy, epsilon, is reached or
+    # specified number of iterations are completed.
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
-        # Run the GUI
-        gui.run()
-        self.image_path = image_path
+    # Vector for 3D points
+    threedpoints = []
+
+    # Vector for 2D points
+    twodpoints = []
 
 
-    def calibrate_pixels_to_distance(self, object_size_pixels, object_physical_size):
-        # Load the image
-        image = cv2.imread(self.image_path)
+    # 3D points real world coordinates
+    objectp3d = np.zeros((1, CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
+    objectp3d[0, :, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2)
+    prev_img_shape = None
 
-        # Calculate the conversion factor
-        conversion_factor = object_physical_size / object_size_pixels
+    # Extracting path of individual image stored
+    # in a given directory. Since no path is
+    # specified, it will take current directory
+    # jpg files alone
 
-        # Example: Convert a distance in pixels to meters
-        distance_pixels = 100
-        distance_meters = distance_pixels * conversion_factor
-        print(f"Distance in meters: {distance_meters} m")
+    for filename in images:
+        image = cv2.imread(filename)
+        grayColor = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        # Display the image with a line indicating the object's size
-        image_with_line = image.copy()
-        cv2.line(image_with_line, (0, 50), (object_size_pixels, 50), (0, 255, 0), 2)
-        cv2.imshow("Image with Line", image_with_line)
+        # Find the chess board corners
+        # If desired number of corners are
+        # found in the image then ret = true
+        ret, corners = cv2.findChessboardCorners(grayColor, CHECKERBOARD, cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_FAST_CHECK + cv2.CALIB_CB_NORMALIZE_IMAGE)
+
+        # If desired number of corners can be detected then,
+        # refine the pixel coordinates and display
+        # them on the images of checker board
+        if ret == True:
+            threedpoints.append(objectp3d)
+
+            # Refining pixel coordinates
+            # for given 2d points.
+            corners2 = cv2.cornerSubPix(
+                grayColor, corners, (11, 11), (-1, -1), criteria)
+
+            twodpoints.append(corners2)
+
+            # Draw and display the corners
+            image = cv2.drawChessboardCorners(image, CHECKERBOARD, corners2, ret)
+
+        cv2.imshow('img', image)
         cv2.waitKey(0)
-        cv2.destroyAllWindows()
 
-# Example usage
+    cv2.destroyAllWindows()
 
-cc = CameraCalibration(''path)
-cc.calibrate_pixels_to_distance('path/to/your/image.jpg', object_size_pixels=50, object_physical_size=10)
+    h, w = image.shape[:2]
+
+
+    # Perform camera calibration by
+    # passing the value of above found out 3D points (threedpoints)
+    # and its corresponding pixel coordinates of the
+    # detected corners (twodpoints)
+    ret, matrix, distortion, r_vecs, t_vecs = cv2.calibrateCamera(threedpoints, twodpoints, grayColor.shape[::-1], None, None)
+
+    newcameramtx, roi = cv2.getOptimalNewCameraMatrix(matrix, distortion, (w,h), 1, (w,h))
+
+    # Displaying required output
+    print(" Camera matrix:")
+    print(matrix)
+
+    print("\n Distortion coefficient:")
+    print(distortion)
+
+    #print("\n Rotation Vectors:")
+    #print(r_vecs)
+
+    #print("\n Translation Vectors:")
+    #print(t_vecs)
+
+    return matrix, distortion, newcameramtx
+
+def correct_images(images, matrix, distortion, newcameramtx):
+    for filename in images:
+        img = cv2.imread(filename)
+        h,  w = img.shape[:2]
+
+        # undistort
+        mapx, mapy = cv2.initUndistortRectifyMap(matrix, distortion, None, newcameramtx, (w,h), 5)
+        dst = cv2.remap(img, mapx, mapy, cv2.INTER_LINEAR)
+        # crop the image
+        #x, y, w, h = roi
+        #dst = dst[y:y+h, x:x+w]
+        output_filename = 'undistorted' + filename
+        cv2.imwrite(output_filename, dst)
+
+
+# Get a list of the file locations where the calibration images are stored
+calibration_images = glob.glob('Calibration_images/Sag/*.jpg')
+
+# Get a list of the file locations where the images we want to flatten are stored
+images_to_undistort = glob.glob('Images_to_undistort/*/Sag/*.jpg')
+
+# Calibrate the camera and generate the specific camera matrix and distortion coefficients
+matrix, distortion, newcameramtx = get_camera_matrix_and_distortion_coefficients(calibration_images)
+
+# Flatten all of our images and store them in the same location with the preffix 'undistorted'
+correct_images(images_to_undistort, matrix, distortion, newcameramtx)
