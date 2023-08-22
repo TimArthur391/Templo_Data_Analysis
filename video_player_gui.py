@@ -5,6 +5,7 @@ from tkinter.ttk import Style, Button, Label, Checkbutton
 import cv2
 from PIL import Image, ImageTk
 import forceplate_data_analyser as fda
+import forceplate_pixel_to_mm as fpmm
 import json
 
 class VideoPlayerGUI:
@@ -58,9 +59,12 @@ class VideoPlayerGUI:
             
         }
         self.polygon = None
-
+        self.instructions_window = None
+        
         # Create the necessary GUI elements
         self.create_widgets()
+
+        self.open_instructions_window()
 
     def create_widgets(self):
      
@@ -181,9 +185,17 @@ class VideoPlayerGUI:
             button.bind('<Enter>', self.handle_enter)
             button.bind('<Leave>', self.handle_leave)
 
+    def run(self):
+        self.root.mainloop()
+
+################################## Video player tools #########################################
+
     def open_video(self):
         self.canvas.delete('all')  # Clear the canvas
         self.reset_coordinates()
+        
+        self.zoom_factor = 1.0
+        self.apply_zoom()
 
         # Open a file dialog to select the MP4 video file
         video_file_path  = tk.filedialog.askopenfilename(filetypes=[("AVI files", "*.avi"),("MP4 files", "*.mp4")])
@@ -240,9 +252,24 @@ class VideoPlayerGUI:
                         self.reset_coordinates()
                     if self.zoom_factor != 1.0:
                         self.zoom_factor = 1.0
+                    if self.pixel_mm_ratio != None:
+                        self.pixel_mm_ratio = None
 
         if not self.paused:
             self.root.after(20, self.play_video)
+
+    def toggle_pause(self):
+        self.paused = not self.paused
+        # Update the Pause button text
+        if self.paused:
+            self.pause_button.config(text="Play")
+            self.update_frame_manipulation_button_states()
+        else:
+            self.pause_button.config(text="Pause")
+            self.update_frame_manipulation_button_states()
+            self.play_video()
+
+        self.update_calculate_button_state()  # Update the Calculate button state
 
     def move_forward(self):
         if self.video_capture is not None:
@@ -285,6 +312,20 @@ class VideoPlayerGUI:
             self.canvas.config(scrollregion=self.canvas.bbox("all"))
             self.redraw_ovals()
             self.redraw_force_plate_overlay()
+
+    def update_frame_manipulation_button_states(self):
+        if self.paused == True:
+            self.forward_button.config(state=tk.NORMAL)
+            self.backward_button.config(state=tk.NORMAL)
+            self.zoom_in_button.config(state=tk.NORMAL)
+            self.zoom_out_button.config(state=tk.NORMAL)
+        else:
+            self.forward_button.config(state=tk.DISABLED)
+            self.backward_button.config(state=tk.DISABLED)
+            self.zoom_in_button.config(state=tk.DISABLED)
+            self.zoom_out_button.config(state=tk.DISABLED)
+
+################################## Canvas manipulation tools #########################################
 
     def redraw_ovals(self):
         ovals_list = []
@@ -345,78 +386,13 @@ class VideoPlayerGUI:
         if not self.paused:
             self.toggle_pause()
 
-    def update_coordinates_listbox(self):
-        # Clear the listbox
-        self.coordinates_listbox.delete(0, tk.END)
-        # Add the coordinates to the listbox
-        for coord in self.coordinates_list:
-            if coord[2] == self.target_oval_id:
-                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Target)")
-                self.target_coordinate = [coord[0], coord[1]]
-            elif coord[2] == self.origin_oval_id:
-                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Origin)")
-                self.origin_coordinate = [coord[0], coord[1]]
-            elif coord[2] == self.top_left_oval_id:
-                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Top left)")
-                self.calibration_parameters[self.camera_view_text]['top left']=((coord[0], coord[1]))
-            elif coord[2] == self.top_right_oval_id:
-                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Top right)")
-                self.calibration_parameters[self.camera_view_text]['top right']=((coord[0], coord[1]))
-            elif coord[2] == self.bottom_left_oval_id:
-                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Bottom left)")
-                self.calibration_parameters[self.camera_view_text]['bottom left']=((coord[0], coord[1]))
-            elif coord[2] == self.bottom_right_oval_id:    
-                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Bottom right)")
-                self.calibration_parameters[self.camera_view_text]['bottom right']=((coord[0], coord[1]))
-            else:
-                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]}")
+    def handle_enter(self, event):
+        event.widget.configure(cursor='hand2')
 
-        if self.f_magnitude:
-            self.coordinates_listbox.insert(tk.END, f"Force vector magnitude: {self.f_magnitude} N")
+    def handle_leave(self, event):
+        event.widget.configure(cursor='')
 
-        if self.f_angle:
-            self.coordinates_listbox.insert(tk.END, f"Force vector angle to horz: {self.f_angle} deg")
-
-        if self.perp_distance:
-            self.coordinates_listbox.insert(tk.END, f"Perpendicular distance: {self.perp_distance} pixels")
-
-        if self.external_moment:
-            self.coordinates_listbox.insert(tk.END, f"External joint moment: {self.external_moment} Npixles")
-
-        if self.pixel_mm_ratio:
-            self.coordinates_listbox.insert(tk.END, f"Each pixel is {self.pixel_mm_ratio} mm")
-
-    def remove_coordinates(self):
-        # Get the selected index from the listbox
-        selected_index = self.coordinates_listbox.curselection()
-
-        if selected_index:
-            # Retrieve the corresponding coordinates and oval ID
-            selected_index = selected_index[0]
-            coord = self.coordinates_list[selected_index]
-            oval_id = coord[2]
-
-            # Remove the oval from the canvas
-            self.canvas.delete(oval_id)
-
-            # Remove the coordinates from the list
-            self.coordinates_list.pop(selected_index)
-
-            # Update the coordinates listbox
-            self.update_coordinates_listbox()
-
-    def reset_coordinates(self):
-        # Clear the coordinates list
-        self.coordinates_list = []
-        self.origin_oval_id = None
-        self.target_oval_id = None
-        self.external_moment = None
-        self.f_magnitude = None
-        self.f_angle = None
-        self.perp_distance = None
-        self.pixel_mm_ratio = None
-        # Update the coordinates listbox
-        self.update_coordinates_listbox()
+################################## Calculation helpers #########################################
 
     def set_origin(self):
         # Get the selected index from the listbox
@@ -478,37 +454,85 @@ class VideoPlayerGUI:
 
         self.update_calculate_button_state()
 
+    def update_coordinates_listbox(self):
+        # Clear the listbox
+        self.coordinates_listbox.delete(0, tk.END)
+        # Add the coordinates to the listbox
+        for coord in self.coordinates_list:
+            if coord[2] == self.target_oval_id:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Target)")
+                self.target_coordinate = [coord[0], coord[1]]
+            elif coord[2] == self.origin_oval_id:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Origin)")
+                self.origin_coordinate = [coord[0], coord[1]]
+            elif coord[2] == self.top_left_oval_id:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Top left)")
+                self.calibration_parameters[self.camera_view_text]['top left']=((coord[0], coord[1]))
+            elif coord[2] == self.top_right_oval_id:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Top right)")
+                self.calibration_parameters[self.camera_view_text]['top right']=((coord[0], coord[1]))
+            elif coord[2] == self.bottom_left_oval_id:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Bottom left)")
+                self.calibration_parameters[self.camera_view_text]['bottom left']=((coord[0], coord[1]))
+            elif coord[2] == self.bottom_right_oval_id:    
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]} (Bottom right)")
+                self.calibration_parameters[self.camera_view_text]['bottom right']=((coord[0], coord[1]))
+            else:
+                self.coordinates_listbox.insert(tk.END, f"X: {coord[0]}, Y: {coord[1]}")
+
+        if self.f_magnitude:
+            self.coordinates_listbox.insert(tk.END, f"Force vector magnitude: {self.f_magnitude} N")
+
+        if self.f_angle:
+            self.coordinates_listbox.insert(tk.END, f"Force vector angle to horz: {self.f_angle} deg")
+
+        if self.perp_distance:
+            self.coordinates_listbox.insert(tk.END, f"Perpendicular distance: {self.perp_distance} mm")
+
+        if self.external_moment:
+            self.coordinates_listbox.insert(tk.END, f"External joint moment: {self.external_moment} Nm")
+
+        if self.pixel_mm_ratio:
+            self.coordinates_listbox.insert(tk.END, f"Each pixel is {self.pixel_mm_ratio} mm")
+
+    def remove_coordinates(self):
+        # Get the selected index from the listbox
+        selected_index = self.coordinates_listbox.curselection()
+
+        if selected_index:
+            # Retrieve the corresponding coordinates and oval ID
+            selected_index = selected_index[0]
+            coord = self.coordinates_list[selected_index]
+            oval_id = coord[2]
+
+            # Remove the oval from the canvas
+            self.canvas.delete(oval_id)
+
+            # Remove the coordinates from the list
+            self.coordinates_list.pop(selected_index)
+
+            # Update the coordinates listbox
+            self.update_coordinates_listbox()
+
+    def reset_coordinates(self):
+        # Clear the coordinates list
+        self.coordinates_list = []
+        self.origin_oval_id = None
+        self.target_oval_id = None
+        self.external_moment = None
+        self.f_magnitude = None
+        self.f_angle = None
+        self.perp_distance = None
+        self.pixel_mm_ratio = None
+        # Update the coordinates listbox
+        self.update_coordinates_listbox()
+
     def update_calculate_button_state(self):
         # Enable the Calculate button if an origin and target oval are selected and the video is paused
         if self.origin_oval_id and self.target_oval_id and self.paused and self.camera_view.get() != 0 and self.video_path and self.txt_file_path:
             self.calculate_button.config(state=tk.NORMAL)
         else:
            self.calculate_button.config(state=tk.DISABLED)
-
-    def update_frame_manipulation_button_states(self):
-        if self.paused == True:
-            self.forward_button.config(state=tk.NORMAL)
-            self.backward_button.config(state=tk.NORMAL)
-            self.zoom_in_button.config(state=tk.NORMAL)
-            self.zoom_out_button.config(state=tk.NORMAL)
-        else:
-            self.forward_button.config(state=tk.DISABLED)
-            self.backward_button.config(state=tk.DISABLED)
-            self.zoom_in_button.config(state=tk.DISABLED)
-            self.zoom_out_button.config(state=tk.DISABLED)
-
-    def toggle_pause(self):
-        self.paused = not self.paused
-        # Update the Pause button text
-        if self.paused:
-            self.pause_button.config(text="Play")
-            self.update_frame_manipulation_button_states()
-        else:
-            self.pause_button.config(text="Pause")
-            self.update_frame_manipulation_button_states()
-            self.play_video()
-
-        self.update_calculate_button_state()  # Update the Calculate button state
 
     def calculate(self):
         da = fda.ForcePlateDataAnalyser(self.txt_file_path, self.timestamp, self.camera_view.get(),
@@ -521,26 +545,27 @@ class VideoPlayerGUI:
         self.canvas.create_line(self.origin_coordinate[0], self.origin_coordinate[1],
                                 force_vector_tip_coorindate[0], force_vector_tip_coorindate[1], 
                                 smooth=True, width=3, fill='yellow')
+        
+        self.extract_calibration_data_from_JSON()
+        pmm = fpmm.ForcePlatePixelToMm(self.calibration_parameters, self.camera_view_text)
+        pmm.set_origin_coordinate(self.origin_coordinate)
+        self.pixel_mm_ratio = pmm.calculate_pixel_mm_ratio()
+
+        self.canvas.create_line(pmm.midline_coordinates[0][0], pmm.midline_coordinates[0][1],
+                                pmm.midline_coordinates[1][0], pmm.midline_coordinates[1][1], 
+                                smooth=True, width=2, fill='white')
+        
 
         #work out the perpendicular distance from target to line
         #calculate external moment
+        da.set_pixel_mm_ratio(self.pixel_mm_ratio)
         self.external_moment, target_to_vector_tip_coordinate, self.perp_distance = da.get_external_moment_information() #x_distance, y_distance, angle)
         self.update_coordinates_listbox()
         self.canvas.create_line(self.target_coordinate[0], self.target_coordinate[1],
                                 target_to_vector_tip_coordinate[0], target_to_vector_tip_coordinate[1], 
                                 smooth=True, width=2, fill='white')
 
-    def handle_enter(self, event):
-        event.widget.configure(cursor='hand2')
-
-    def handle_leave(self, event):
-        event.widget.configure(cursor='')
-
-    def run(self):
-        self.root.mainloop()
-
-
-################################## Calibration Window #########################################
+################################## Calibration window #########################################
 
     def open_calibration_window(self):
         # Create a new Toplevel window (secondary window)
@@ -558,11 +583,15 @@ class VideoPlayerGUI:
             self.extract_calibration_data_from_JSON()
                 
             # Draw a box over the force plate using calibration coordinates
+            self.zoom_factor = 1.0
+            self.apply_zoom()
             self.draw_force_plate_overlay()
 
             # Display the pixel to mm ratio in the coordinates box
             self.pixel_mm_ratio = self.calibration_parameters[self.camera_view_text]["ratio"]
             self.update_coordinates_listbox()
+
+            self.calibration_window.attributes("-topmost", 1)
 
     def create_calibration_widgets(self):
         # Create a custom style for the interface
@@ -598,6 +627,15 @@ class VideoPlayerGUI:
 
         self.perform_calibrate_button = Button(self.calibration_window, text="Calibrate", command=self.perform_calibration, style='TButton')
         self.perform_calibrate_button.grid(row=2, column=0, columnspan=2, sticky='nsew', padx=5, pady=2)
+
+        self.calibration_insctructions_label = Label(self.calibration_window, text=
+"""
+Click the corners of the force plate,
+using the zoom button for precision.
+Assign each point with the 
+corresponding label. Click calibrate.
+""")
+        self.calibration_insctructions_label.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=5, pady=2)
 
     def set_top_left(self):
         selected_index = self.coordinates_listbox.curselection()
@@ -696,11 +734,19 @@ class VideoPlayerGUI:
             self.update_coordinates_listbox()
 
     def perform_calibration(self):
-        # the force plates are x mm in sagittal plane and y mm in coronal plane
-        # 
+        self.zoom_factor = 1.0
+        self.apply_zoom()
+
+        pmm = fpmm.ForcePlatePixelToMm(self.calibration_parameters, self.camera_view_text)
+        self.pixel_mm_ratio = pmm.calculate_pixel_mm_ratio()
+
+        self.update_coordinates_listbox()
+
+        self.calibration_parameters[self.camera_view_text]["ratio"] = self.pixel_mm_ratio
 
         with open("calibration.json", "w") as outfile:
             outfile.write(json.dumps(self.calibration_parameters, indent=4))
+        
         self.redraw_force_plate_overlay()
 
     def draw_force_plate_overlay(self):
@@ -730,16 +776,65 @@ class VideoPlayerGUI:
         with open('calibration.json', 'r') as openfile:
             self.calibration_parameters = json.load(openfile)
 
+################################## Instructions window #########################################
 
-# Create the main Tkinter window
-root = tk.Tk()
+    def open_instructions_window(self):
+        self.instructions_window = Toplevel(self.root)
+        self.instructions_window.title("Instructions")
 
-# Set the window title
-root.title("Video Player GUI")
-root.configure(bg='#2d2d2d')
+        style = Style()
+        style.theme_use('clam')  # Use the 'clam' theme as a base
 
-# Create an instance of the VideoPlayerGUI class
-gui = VideoPlayerGUI(root)
+        # Configure the colors for the dark theme
+        style.configure('.', foreground='white', background='#2d2d2d')  # Set text and background color for all elements
+        style.configure('TButton', foreground='white', background='#444444', bordercolor='#666666',
+                        lightcolor='#444444', darkcolor='#444444')  # Customize Button widget
+        style.configure('TLabel', foreground='white', background='#2d2d2d')  # Customize Label widget
+        style.configure('TCheckbutton', foreground='white', background='#2d2d2d', indicatorcolor='white',
+                        selectcolor='#2d2d2d', troughcolor='#2d2d2d')  # Customize Checkbutton widget
 
-# Run the GUI
-gui.run()
+        # Override hover behavior for Checkbutton
+        style.map('TCheckbutton',
+                  background=[('active', '#2d2d2d'), ('selected', '#2d2d2d')],
+                  foreground=[('active', 'white'), ('selected', 'white')])
+        
+        self.instructions_window.configure(background='#2d2d2d')
+    
+        self.instructions_label = Label(self.instructions_window, text=
+"""
+This tool analyses data exported from Contemplas Templo.
+
+To use this tool:
+
+1. Export video data - this must begin at time 0s, otherwise it will be out of sync with the force plate data
+2. Export the force plate data - go to all recordings, select the desired recording, export the meta data as a .txt file (tab delaminated)
+
+3. Click open video and select the video you want to analyse, then select the corresponding .txt file with force plate data in
+4. Select whether the video is in the coronal plane or the sagittal plane
+
+5. Pause the video on the frame you want to analyse (use the forwards and backwards buttons to move one frame at a time)
+6. Click on the base of the force vector and at the joint centre (use the zoom in button for more precision)
+
+7. In the text box on the right select the points that have appeared and assign origin (of the force vector) and target (joint centre)
+8. Click the calculate button
+
+To ensure the cameras are calibrated correctly, so that the force plates are positioned in the correct place, click the 'Calibrate' text
+in the top right corner.
+""")
+        self.instructions_label.pack(padx=30, pady=30)
+
+################################## Run the programme #########################################
+
+if __name__ == '__main__':
+    # Create the main Tkinter window
+    root = tk.Tk()
+
+    # Set the window title
+    root.title("Video Player GUI")
+    root.configure(bg='#2d2d2d')
+
+    # Create an instance of the VideoPlayerGUI class
+    gui = VideoPlayerGUI(root)
+
+    # Run the GUI
+    gui.run()

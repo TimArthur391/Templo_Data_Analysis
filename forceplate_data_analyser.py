@@ -16,9 +16,10 @@ class ForcePlateDataAnalyser:
         self.target_coordinate = target_coordinate
         self.force_vector_tip_coorindate = None
         self.target_to_vector_tip_coordinate = None
-        self.max_force_vector_length = 400 #pixels
+        self.max_force_vector_length = 200 #pixels
         self.external_moment = None
         self.f_to_target_perpendicular_distance = None
+        self.pixel_mm_ratio = 1
         
         self.load_data()
         self.get_maximum_force_magnitude()
@@ -94,7 +95,7 @@ class ForcePlateDataAnalyser:
     def get_external_moment_information(self):
         self.get_distance_between_force_vector_and_target()
         
-        self.external_moment = self.f_magnitude * self.f_to_target_perpendicular_distance
+        self.external_moment = self.f_magnitude * self.f_to_target_perpendicular_distance / 1000
         self.get_target_to_vector_tip_coordinate()
         
         return np.abs(np.round(self.external_moment, decimals=2)), self.target_to_vector_tip_coordinate, np.abs(np.round(self.f_to_target_perpendicular_distance, decimals=2))
@@ -111,7 +112,7 @@ class ForcePlateDataAnalyser:
         theta = np.arctan(x/y)
         beta = (np.pi/2) - self.f_angle - theta
 
-        self.f_to_target_perpendicular_distance = p * np.sin(beta)
+        self.f_to_target_perpendicular_distance = p * np.sin(beta) * self.pixel_mm_ratio
 
     def pixles_to_mm(self, distance, direction):
         return distance
@@ -121,9 +122,11 @@ class ForcePlateDataAnalyser:
         x = self.target_coordinate[0] - self.origin_coordinate[0]
         y = self.origin_coordinate[1] - self.target_coordinate[1]
 
-        x = self.origin_coordinate[0] + (x + (self.f_to_target_perpendicular_distance * np.sin(self.f_angle)))
-        y = self.origin_coordinate[1] - (y - (self.f_to_target_perpendicular_distance * np.cos(self.f_angle)))
+        x = self.origin_coordinate[0] + (x + (self.f_to_target_perpendicular_distance * np.sin(self.f_angle) / self.pixel_mm_ratio))
+        y = self.origin_coordinate[1] - (y - (self.f_to_target_perpendicular_distance * np.cos(self.f_angle) / self.pixel_mm_ratio))
         
         self.target_to_vector_tip_coordinate = [x, y]
 
 
+    def set_pixel_mm_ratio(self, pixel_mm_ratio):
+        self.pixel_mm_ratio = pixel_mm_ratio
