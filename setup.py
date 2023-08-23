@@ -22,5 +22,5 @@ setup(
         "License :: OSI Approved :: MIT License",
 
     ],
-    python_requires='=3.9',
+    python_requires='==3.9',
 )
