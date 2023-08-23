@@ -9,12 +9,12 @@ setup(
     author_email='arthurt1995@googlemail.com',
     url='https://github.com/TimArthur391/Templo_Data_Analysis',
     packages=find_packages(),
-    install_requires=[],
-    entry_points={
-        'console_scripts': [
-            'Templo-External-Moments = app'
-        ]
-    },
+    install_requires=[
+        'numpy>=1.23.3',
+        'opencv-python>=4.7.0.72',
+        'pandas>=1.5.0',
+        'Pillow>=9.2.0'
+    ],
     classifiers=[
 
         "Programming Language :: Python :: 3",
