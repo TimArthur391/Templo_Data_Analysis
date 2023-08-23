@@ -4,8 +4,8 @@ from tkinter import Toplevel
 from tkinter.ttk import Style, Button, Label, Checkbutton
 import cv2
 from PIL import Image, ImageTk
-import forceplate_data_analyser as fda
-import forceplate_pixel_to_mm as fpmm
+import scrpts.forceplate_data_analyser as fda
+import scrpts.forceplate_pixel_to_mm as fpmm
 import json
 
 class VideoPlayerGUI:
@@ -169,6 +169,10 @@ class VideoPlayerGUI:
         self.calibrate_button = tk.Button(self.root, text="Calibrate", command=self.open_calibration_window, bg='#2d2d2d', foreground='grey', relief=tk.FLAT)
         self.calibrate_button.grid(row=1, column=3, columnspan=1, sticky='nsew', padx=5, pady=2)
 
+        # Create button to open instructions window
+        self.instructions_button = tk.Button(self.root, text="Instructions", command=self.open_instructions_window, bg='#2d2d2d', foreground='grey', relief=tk.FLAT)
+        self.instructions_button.grid(row=1, column=2, columnspan=1, sticky='nsew', padx=5, pady=2)
+
         self.calculate_button = Button(self.root, text="Calculate", command=self.calculate, style='TButton')
         self.calculate_button.grid(row=5, column=0, columnspan=4, sticky='nsew', padx=5, pady=5)
         self.calculate_button.config(state=tk.DISABLED)
@@ -180,7 +184,8 @@ class VideoPlayerGUI:
         # Bind the events for changing the mouse cursor
         list_of_buttons = [self.open_button, self.pause_button, self.remove_button, self.origin_button, 
                            self.target_button, self.calculate_button, self.coronal_check, self.sagittal_check,
-                           self.calibrate_button, self.forward_button, self.backward_button, self.zoom_in_button, self.zoom_out_button]
+                           self.calibrate_button, self.forward_button, self.backward_button, self.zoom_in_button, 
+                           self.instructions_button, self.zoom_out_button]
         for button in list_of_buttons:
             button.bind('<Enter>', self.handle_enter)
             button.bind('<Leave>', self.handle_leave)
@@ -573,7 +578,8 @@ class VideoPlayerGUI:
         self.calibration_window.title("Calibrate")
 
         if self.camera_view.get() == 0 or self.video_path == None or self.paused == False:
-            self.error_label = Label(self.calibration_window, text="Ensure a video and a camera direction have been selected, and video has been paused")
+            self.calibration_window.configure(background='#2d2d2d')
+            self.error_label = Label(self.calibration_window, text="Ensure a video and a camera direction have been selected, and video has been paused", style='TLabel')
             self.error_label.pack(padx=10, pady=10)
         else:
             # Create widgets for this window
@@ -744,7 +750,7 @@ corresponding label. Click calibrate.
 
         self.calibration_parameters[self.camera_view_text]["ratio"] = self.pixel_mm_ratio
 
-        with open("calibration.json", "w") as outfile:
+        with open("scrpts\calibration.json", "w") as outfile:
             outfile.write(json.dumps(self.calibration_parameters, indent=4))
         
         self.redraw_force_plate_overlay()
@@ -773,7 +779,7 @@ corresponding label. Click calibrate.
             )
 
     def extract_calibration_data_from_JSON(self):
-        with open('calibration.json', 'r') as openfile:
+        with open('scrpts\calibration.json', 'r') as openfile:
             self.calibration_parameters = json.load(openfile)
 
 ################################## Instructions window #########################################
@@ -820,21 +826,8 @@ To use this tool:
 
 To ensure the cameras are calibrated correctly, so that the force plates are positioned in the correct place, click the 'Calibrate' text
 in the top right corner.
-""")
+""", style='TLabel')
         self.instructions_label.pack(padx=30, pady=30)
 
 ################################## Run the programme #########################################
 
-if __name__ == '__main__':
-    # Create the main Tkinter window
-    root = tk.Tk()
-
-    # Set the window title
-    root.title("Video Player GUI")
-    root.configure(bg='#2d2d2d')
-
-    # Create an instance of the VideoPlayerGUI class
-    gui = VideoPlayerGUI(root)
-
-    # Run the GUI
-    gui.run()
