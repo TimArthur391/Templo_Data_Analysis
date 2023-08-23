@@ -1,0 +1,70 @@
+{
+    "RL000000": {
+        "0": {
+            "pixel to mm ratio": 0,
+            "camera view": "text",
+            "perpendicular distance": 0,
+            "force vector magnitude": 0,
+            "external moment": 0
+        }
+    },
+    "RL000001": {
+        "4": {
+            "pixel to mm ratio": 3.666,
+            "camera view": "sagittal",
+            "perpendicular distance": 54.95,
+            "force vector magnitude": 761.6,
+            "external moment": 41.85
+        },
+        "5": {
+            "pixel to mm ratio": 3.645,
+            "camera view": "sagittal",
+            "perpendicular distance": 57.12,
+            "force vector magnitude": 624.59,
+            "external moment": 35.68
+        },
+        "6": {
+            "pixel to mm ratio": 3.645,
+            "camera view": "sagittal",
+            "perpendicular distance": 302.52,
+            "force vector magnitude": 624.59,
+            "external moment": 188.95
+        }
+    },
+    "RL000003": {
+        "0": {
+            "pixel to mm ratio": 3.624,
+            "camera view": "sagittal",
+            "perpendicular distance": 52.93,
+            "force vector magnitude": 624.59,
+            "external moment": 33.06
+        },
+        "1": {
+            "pixel to mm ratio": 3.624,
+            "camera view": "sagittal",
+            "perpendicular distance": 55.52,
+            "force vector magnitude": 624.59,
+            "external moment": 34.68
+        }
+    },
+    "RL000005": {
+        "0": {
+            "date": "13-07-2023",
+            "time": "14:44",
+            "pixel to mm ratio": 3.645,
+            "camera view": "sagittal",
+            "perpendicular distance": 63.25,
+            "force vector magnitude": 800.82,
+            "external moment": 50.65
+        },
+        "1": {
+            "date": "13-07-2023",
+            "time": "14:44",
+            "pixel to mm ratio": 3.645,
+            "camera view": "sagittal",
+            "perpendicular distance": 69.96,
+            "force vector magnitude": 800.82,
+            "external moment": 56.03
+        }
+    }
+}

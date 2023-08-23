@@ -60,6 +60,9 @@ class VideoPlayerGUI:
         }
         self.polygon = None
         self.instructions_window = None
+        self.hospital_number = 'To save result enter hospital no'
+        self.date = None
+        self.time = None
         
         # Create the necessary GUI elements
         self.create_widgets()
@@ -174,9 +177,13 @@ class VideoPlayerGUI:
         self.instructions_button.grid(row=1, column=2, columnspan=1, sticky='nsew', padx=5, pady=2)
 
         self.calculate_button = Button(self.root, text="Calculate", command=self.calculate, style='TButton')
-        self.calculate_button.grid(row=5, column=0, columnspan=4, sticky='nsew', padx=5, pady=5)
+        self.calculate_button.grid(row=5, column=0, columnspan=2, sticky='nsew', padx=5, pady=5)
         self.calculate_button.config(state=tk.DISABLED)
 
+        # Create a hospital number entry box
+        self.hospital_number_entry = tk.Entry(self.root, textvariable = self.hospital_number, justify='center', background='#444444', foreground='white')
+        self.hospital_number_entry.grid(row=5, column=2, columnspan=2, sticky='nsew', padx=5, pady=5)
+        self.hospital_number_entry.insert(0, self.hospital_number)
 
         # Bind mouse click events to the canvas
         self.canvas.bind("<Button-1>", self.handle_click)
@@ -539,6 +546,52 @@ class VideoPlayerGUI:
         else:
            self.calculate_button.config(state=tk.DISABLED)
 
+    def get_date_from_txt_file(self):
+        yyyymmdd_hhmmss = self.txt_file_path[-19:-4]
+
+        self.date = f'{yyyymmdd_hhmmss[6:8]}-{yyyymmdd_hhmmss[4:6]}-{yyyymmdd_hhmmss[:4]}' 
+        self.time = f'{yyyymmdd_hhmmss[9:11]}:{yyyymmdd_hhmmss[11:13]}'
+
+    def save_result_to_JSON(self):
+        # save the pixel to mm ratio, camera view, perpendicular distance, force and external moment
+        self.hospital_number = self.hospital_number_entry.get()
+        self.get_date_from_txt_file()
+
+        if not self.hospital_number == 'To save result enter hospital no':
+            results = {}
+            results_to_add = {
+                'date' : self.date,
+                'time' : self.time,
+                'pixel to mm ratio' : self.pixel_mm_ratio,
+                'camera view' : self.camera_view_text,
+                'perpendicular distance' : self.perp_distance,
+                'force vector magnitude' : self.f_magnitude,
+                'external moment' : self.external_moment
+            }
+
+            with open('scrpts/results.json', 'r') as openfile:
+                results = json.load(openfile)
+
+            if results:
+                key_value = 0
+                if self.hospital_number in results:
+                    # add another data record row
+                    keys = results[self.hospital_number].keys()
+                    last_key_value = 0
+                    for key in keys:
+                        if int(key) > last_key_value:
+                            last_key_value = int(key)
+
+                    key_value = last_key_value + 1
+                else:
+                    results[self.hospital_number] = {}
+                
+                results[self.hospital_number][key_value] = results_to_add
+
+                with open("scrpts/results.json", "w") as outfile:
+                    outfile.write(json.dumps(results, indent=4))
+
+
     def calculate(self):
         da = fda.ForcePlateDataAnalyser(self.txt_file_path, self.timestamp, self.camera_view.get(),
                                         self.origin_coordinate, self.target_coordinate)
@@ -569,6 +622,8 @@ class VideoPlayerGUI:
         self.canvas.create_line(self.target_coordinate[0], self.target_coordinate[1],
                                 target_to_vector_tip_coordinate[0], target_to_vector_tip_coordinate[1], 
                                 smooth=True, width=2, fill='white')
+        
+        self.save_result_to_JSON()
 
 ################################## Calibration window #########################################
 
